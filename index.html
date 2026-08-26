@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Berkinmachoq - Chizish Funksiyasi Bilan</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; user-select: none; }
+        #ui {
+            position: absolute; top: 10px; left: 10px; color: white;
+            background: rgba(15, 23, 42, 0.85); padding: 15px; border-radius: 8px;
+            max-width: 320px; z-index: 10;
+        }
+        button { padding: 8px; margin-top: 5px; width: 100%; cursor: pointer; border-radius: 4px; border: none; font-weight: bold; background: #3b82f6; color: white; }
+        #link-box { word-break: break-all; background: #1e293b; padding: 6px; border-radius: 4px; margin-top: 5px; display: none; font-size: 11px; }
+        .emotes { display: flex; gap: 5px; margin-top: 8px; }
+        .emotes button { background: #475569; font-size: 11px; padding: 5px; }
+        
+        /* Chizish paneli stili */
+        #draw-control {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #475569;
+        }
+        .draw-tools { display: flex; gap: 5px; align-items: center; margin-top: 5px; }
+
+        #game-timer { font-size: 18px; font-weight: bold; color: #10b981; margin-top: 5px; }
+
+        #blind-screen {
+            position: absolute; top:0; left:0; width:100vw; height:100vh;
+            background: black; color: white; display: none;
+            flex-direction: column; justify-content: center; align-items: center;
+            z-index: 100; font-size: 30px; font-weight: bold;
+        }
+        
+        #roulette-overlay {
+            position: absolute; top:0; left:0; width:100vw; height:100vh;
+            background: rgba(0,0,0,0.8); color: white; display: none;
+            flex-direction: column; justify-content: center; align-items: center;
+            z-index: 90;
+        }
+        #wheel {
+            width: 200px; height: 200px; border-radius: 50%;
+            border: 8px solid #f59e0b; display: flex; justify-content: center;
+            align-items: center; font-size: 24px; font-weight: bold;
+            transition: transform 3s cubic-bezier(0.15, 0.9, 0.3, 1);
+            background: conic-gradient(#ef4444 0deg 180deg, #3b82f6 180deg 360deg);
+        }
+
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 10px; height: 10px; border: 2px solid red; border-radius: 50%;
+            pointer-events: none; display: none; z-index: 20;
+        }
+        #interact-prompt {
+            position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.7); color: gold; padding: 10px 20px; border-radius: 20px;
+            font-size: 18px; display: none; z-index: 20; font-weight: bold;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+</head>
+<body>
+
+    <div id="ui">
+        <h3 style="margin-top:0">3D Berkinmachoq</h3>
+        <div id="status">Ulanmoqda...</div>
+        <div id="role-display" style="font-size: 16px; font-weight: bold; color: #f59e0b; margin-top: 5px;"></div>
+        <div id="game-timer">Vaqt: 60s</div>
+        
+        <div id="host-section" style="display:none;">
+            <p style="font-size: 12px; margin: 5px 0;">Do'stingizga linkni yuboring:</p>
+            <div id="link-box"></div>
+            <button onclick="copyLink()" style="background:#10b981;">Linkni nusxalash</button>
+        </div>
+
+        <!-- Sichqoncha bilan chizish paneli -->
+        <div id="draw-control">
+            <span style="font-size:12px;">Sichqoncha bilan chizish:</span>
+            <div class="draw-tools">
+                <button id="draw-toggle-btn" onclick="toggleDrawMode()" style="background:#8b5cf6;">Chizishni Yoqish</button>
+                <input type="color" id="brush-color" value="#ff0000" style="height:30px; cursor:pointer;">
+            </div>
+            <button onclick="clearDrawings()" style="background:#ef4444; font-size:11px; margin-top:4px;">Chiziqlarni O'chirish</button>
+        </div>
+
+        <div style="margin-top: 8px;">
+            <span style="font-size:12px;">Emotsiyalar:</span>
+            <div class="emotes">
+                <button onclick="setEmote('stand')">Tik turish</button>
+                <button onclick="setEmote('sit')">O'tirish</button>
+                <button onclick="setEmote('lay')">Yatish</button>
+            </div>
+        </div>
+
+        <p style="font-size: 11px; margin-top: 8px;">
+            Boshqaruv: <b>W, A, S, D</b> | Sakrash: <b>Space</b><br>
+            Kamera: <b>Sichqoncha chap tugmasi (Surish)</b><br>
+            Chizish: <b>Chizish rejimida sichqoncha bilan bosib chizish</b><br>
+            Berkinish: <b>E</b> | Otish: <b>LMB Click</b>
+        </p>
+    </div>
+
+    <div id="blind-screen">
+        <div>Siz IZLOVCHISIZ!</div>
+        <div style="font-size: 18px; margin-top: 10px;">Berkinuvchiga vaqt berilmoqda...</div>
+        <div id="timer" style="font-size: 60px; color: #ef4444; margin-top: 20px;">10</div>
+    </div>
+
+    <div id="roulette-overlay">
+        <h2>Rollar Aniqlanmoqda...</h2>
+        <div id="wheel">🎲</div>
+    </div>
+
+    <div id="crosshair"></div>
+    <div id="interact-prompt">Berkinish uchun [E] tugmasini bosing</div>
+
+    <script>
+        // --- 1. THREE.JS SAHNA VA YORUG'LIK ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0f172a);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0x94a3b8, 0.6));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(20, 40, 20);
+        scene.add(dirLight);
+
+        // Pol
+        const floorGeo = new THREE.PlaneGeometry(70, 50);
+        const floorMat = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        const interactiveObjects = [];
+        const wallColliders = [];
+        const drawTargets = [floor]; // Chizish mumkin bo'lgan yuzalar
+
+        function createWall(x, z, w, h, d, color) {
+            const mesh = new THREE.Mesh(
+                new THREE.BoxGeometry(w, h, d),
+                new THREE.MeshLambertMaterial({ color: color })
+            );
+            mesh.position.set(x, h/2, z);
+            scene.add(mesh);
+
+            const box = new THREE.Box3().setFromObject(mesh);
+            wallColliders.push(box);
+            drawTargets.push(mesh); // Devorlarga ham chizsa bo'ladi
+
+            return mesh;
+        }
+
+        // DEVORLAR
+        createWall(0, -25, 70, 8, 1, 0x334155);
+        createWall(0, 25, 70, 8, 1, 0x334155);
+        createWall(-35, 0, 1, 8, 50, 0x334155);
+        createWall(35, 0, 1, 8, 50, 0x334155);
+        createWall(-12, -5, 1, 8, 40, 0x475569);
+        createWall(12, 5, 1, 8, 40, 0x475569);
+
+        // MEBELLARNI YARATISH FUNKSIYALARI
+        function createFancyWardrobe(x, z, hideType) {
+            const group = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.BoxGeometry(4, 7, 3), new THREE.MeshLambertMaterial({ color: 0x5c2c16 }));
+            body.position.y = 3.5;
+            group.add(body);
+
+            const doorMat = new THREE.MeshLambertMaterial({ color: 0x78350f });
+            const doorLeft = new THREE.Mesh(new THREE.BoxGeometry(1.9, 6.6, 0.1), doorMat);
+            doorLeft.position.set(-1, 3.5, 1.51);
+            group.add(doorLeft);
+
+            const doorRight = new THREE.Mesh(new THREE.BoxGeometry(1.9, 6.6, 0.1), doorMat);
+            doorRight.position.set(1, 3.5, 1.51);
+            group.add(doorRight);
+
+            const handleMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
+            const handleLeft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.6), handleMat);
+            handleLeft.position.set(-0.2, 3.5, 1.6);
+            group.add(handleLeft);
+
+            const handleRight = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.6), handleMat);
+            handleRight.position.set(0.2, 3.5, 1.6);
+            group.add(handleRight);
+
+            group.position.set(x, 0, z);
+            scene.add(group);
+            group.userData = { isHideable: true, type: hideType };
+            interactiveObjects.push(group);
+            wallColliders.push(new THREE.Box3().setFromObject(body));
+        }
+
+        function createFancyBed(x, z, hideType) {
+            const group = new THREE.Group();
+            const legMat = new THREE.MeshLambertMaterial({ color: 0x331800 });
+            const legGeo = new THREE.BoxGeometry(0.4, 1.2, 0.4);
+
+            const leg1 = new THREE.Mesh(legGeo, legMat); leg1.position.set(-2.8, 0.6, -3.8); group.add(leg1);
+            const leg2 = new THREE.Mesh(legGeo, legMat); leg2.position.set(2.8, 0.6, -3.8); group.add(leg2);
+            const leg3 = new THREE.Mesh(legGeo, legMat); leg3.position.set(-2.8, 0.6, 3.8); group.add(leg3);
+            const leg4 = new THREE.Mesh(legGeo, legMat); leg4.position.set(2.8, 0.6, 3.8); group.add(leg4);
+
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(6, 0.4, 8), new THREE.MeshLambertMaterial({ color: 0x5c2c16 }));
+            frame.position.y = 1.4;
+            group.add(frame);
+
+            const mattress = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.8, 7.8), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
+            mattress.position.y = 2.0;
+            group.add(mattress);
+
+            const pillow = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.3, 2), new THREE.MeshLambertMaterial({ color: 0xffffff }));
+            pillow.position.set(0, 2.55, -2.5);
+            group.add(pillow);
+
+            group.position.set(x, 0, z);
+            scene.add(group);
+            group.userData = { isHideable: true, type: hideType };
+            interactiveObjects.push(group);
+        }
+
+        function createSofa(x, z) {
+            const group = new THREE.Group();
+            const sofaMat = new THREE.MeshLambertMaterial({ color: 0x991b1b });
+
+            const seat = new THREE.Mesh(new THREE.BoxGeometry(6, 1, 3), sofaMat);
+            seat.position.y = 0.8;
+            group.add(seat);
+
+            const back = new THREE.Mesh(new THREE.BoxGeometry(6, 2.5, 0.8), sofaMat);
+            back.position.set(0, 2, -1.1);
+            group.add(back);
+
+            const armLeft = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 3), sofaMat);
+            armLeft.position.set(-2.6, 1.4, 0);
+            group.add(armLeft);
+
+            const armRight = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 3), sofaMat);
+            armRight.position.set(2.6, 1.4, 0);
+            group.add(armRight);
+
+            group.position.set(x, 0, z);
+            scene.add(group);
+            wallColliders.push(new THREE.Box3().setFromObject(seat));
+        }
+
+        function createTableAndChairs(x, z) {
+            const group = new THREE.Group();
+            const woodMat = new THREE.MeshLambertMaterial({ color: 0x78350f });
+
+            const top = new THREE.Mesh(new THREE.BoxGeometry(5, 0.3, 3), woodMat);
+            top.position.y = 2.2;
+            group.add(top);
+
+            const legGeo = new THREE.CylinderGeometry(0.1, 0.1, 2.2);
+            const l1 = new THREE.Mesh(legGeo, woodMat); l1.position.set(-2.2, 1.1, -1.2); group.add(l1);
+            const l2 = new THREE.Mesh(legGeo, woodMat); l2.position.set(2.2, 1.1, -1.2); group.add(l2);
+            const l3 = new THREE.Mesh(legGeo, woodMat); l3.position.set(-2.2, 1.1, 1.2); group.add(l3);
+            const l4 = new THREE.Mesh(legGeo, woodMat); l4.position.set(2.2, 1.1, 1.2); group.add(l4);
+
+            function addChair(cx, cz, rotY) {
+                const chair = new THREE.Group();
+                const cSeat = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.2, 1.2), woodMat);
+                cSeat.position.y = 1.2;
+                chair.add(cSeat);
+
+                const cBack = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 0.2), woodMat);
+                cBack.position.set(0, 1.8, -0.5);
+                chair.add(cBack);
+
+                const cl1 = new THREE.Mesh(legGeo, woodMat); cl1.position.set(-0.5, 0.6, -0.5); cl1.scale.set(1, 0.5, 1); chair.add(cl1);
+                const cl2 = new THREE.Mesh(legGeo, woodMat); cl2.position.set(0.5, 0.6, -0.5); cl2.scale.set(1, 0.5, 1); chair.add(cl2);
+                const cl3 = new THREE.Mesh(legGeo, woodMat); cl3.position.set(-0.5, 0.6, 0.5); cl3.scale.set(1, 0.5, 1); chair.add(cl3);
+                const cl4 = new THREE.Mesh(legGeo, woodMat); cl4.position.set(0.5, 0.6, 0.5); cl4.scale.set(1, 0.5, 1); chair.add(cl4);
+
+                chair.position.set(cx, 0, cz);
+                chair.rotation.y = rotY;
+                group.add(chair);
+            }
+
+            addChair(-3, 0, Math.PI / 2);
+            addChair(3, 0, -Math.PI / 2);
+
+            group.position.set(x, 0, z);
+            scene.add(group);
+            wallColliders.push(new THREE.Box3().setFromObject(top));
+        }
+
+        function createPlant(x, z) {
+            const group = new THREE.Group();
+            
+            const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.6, 1.5), new THREE.MeshLambertMaterial({ color: 0xd97706 }));
+            pot.position.y = 0.75;
+            group.add(pot);
+
+            const leafMat = new THREE.MeshLambertMaterial({ color: 0x16a34a });
+            for (let i = 0; i < 5; i++) {
+                const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), leafMat);
+                leaf.position.set(
+                    (Math.random() - 0.5) * 0.6,
+                    1.8 + Math.random() * 0.5,
+                    (Math.random() - 0.5) * 0.6
+                );
+                group.add(leaf);
+            }
+
+            group.position.set(x, 0, z);
+            scene.add(group);
+            wallColliders.push(new THREE.Box3().setFromObject(pot));
+        }
+
+        function createCarpet(x, z, w, d, color) {
+            const carpet = new THREE.Mesh(
+                new THREE.PlaneGeometry(w, d),
+                new THREE.MeshLambertMaterial({ color: color })
+            );
+            carpet.rotation.x = -Math.PI / 2;
+            carpet.position.set(x, 0.01, z);
+            scene.add(carpet);
+        }
+
+        // MEBELLARNI XONALARGA JOYLASH
+        createFancyWardrobe(-28, -18, "Shkaf");
+        createFancyWardrobe(28, 18, "Shkaf");
+        createFancyBed(-25, 15, "Karavot tagi");
+        createFancyBed(25, -15, "Karavot tagi");
+
+        createSofa(0, -15);
+        createTableAndChairs(0, 15);
+        createPlant(-10, -20);
+        createPlant(10, 20);
+
+        createCarpet(0, -15, 8, 5, 0x065f46);
+        createCarpet(0, 15, 8, 6, 0x1e1b4b);
+
+        // --- 2. PERSONAJLAR VA MODEL ---
+        function createPlayerModel(color) {
+            const group = new THREE.Group();
+            const bodyMat = new THREE.MeshLambertMaterial({ color: color });
+            
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.2, 1.2), bodyMat);
+            body.position.y = 1.1;
+            group.add(body);
+
+            const gun = new THREE.Mesh(
+                new THREE.BoxGeometry(0.3, 0.3, 1),
+                new THREE.MeshLambertMaterial({ color: 0x111111 })
+            );
+            gun.position.set(0.6, 1.2, -0.8);
+            gun.visible = false;
+            group.add(gun);
+
+            return { group, body, gun };
+        }
+
+        const myModel = createPlayerModel(0x3b82f6);
+        const player = myModel.group;
+        player.position.set(-25, 0, 0);
+        scene.add(player);
+
+        const peerModel = createPlayerModel(0xef4444);
+        const peerPlayer = peerModel.group;
+        peerPlayer.position.set(0, -100, 0);
+        scene.add(peerPlayer);
+
+        let myRole = "";
+        let isHiddenInside = false;
+        let nearObject = null;
+        let currentEmote = "stand";
+
+        let velocityY = 0;
+        let isGrounded = true;
+        const gravity = -0.01;
+
+        // --- 3. SICHQONCHA BILAN CHIZISH VA KAMERANI BURISH ---
+        let isMouseDown = false;
+        let isDrawingMode = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let cameraAngleX = 0;
+        let cameraAngleY = 0.3;
+
+        const drawingLines = [];
+        let currentLine = null;
+        const drawRaycaster = new THREE.Raycaster();
+        const mouseVec = new THREE.Vector2();
+
+        function toggleDrawMode() {
+            isDrawingMode = !isDrawingMode;
+            const btn = document.getElementById('draw-toggle-btn');
+            if (isDrawingMode) {
+                btn.innerText = "Chizishni O'chirish";
+                btn.style.background = "#10b981";
+            } else {
+                btn.innerText = "Chizishni Yoqish";
+                btn.style.background = "#8b5cf6";
+            }
+        }
+
+        function clearDrawings() {
+            for (let line of drawingLines) {
+                scene.remove(line);
+                if (line.geometry) line.geometry.dispose();
+            }
+            drawingLines.length = 0;
+        }
+
+        function drawPoint(e) {
+            mouseVec.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouseVec.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            drawRaycaster.setFromCamera(mouseVec, camera);
+            const intersects = drawRaycaster.intersectObjects(drawTargets);
+
+            if (intersects.length > 0) {
+                const hitPoint = intersects[0].point;
+                // Biroz ko'tarish (z-fighting/ustma-ust tushishni oldini olish uchun)
+                hitPoint.add(intersects[0].face.normal.clone().multiplyScalar(0.05));
+
+                if (!currentLine) {
+                    const colorHex = document.getElementById('brush-color').value;
+                    const lineMat = new THREE.LineBasicMaterial({ color: colorHex, linewidth: 3 });
+                    const lineGeo = new THREE.BufferGeometry();
+                    lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(300 * 3), 3));
+                    
+                    currentLine = new THREE.Line(lineGeo, lineMat);
+                    currentLine.userData = { count: 0 };
+                    scene.add(currentLine);
+                    drawingLines.push(currentLine);
+                }
+
+                const count = currentLine.userData.count;
+                if (count < 300) {
+                    const positions = currentLine.geometry.attributes.position.array;
+                    positions[count * 3] = hitPoint.x;
+                    positions[count * 3 + 1] = hitPoint.y;
+                    positions[count * 3 + 2] = hitPoint.z;
+                    currentLine.userData.count++;
+                    currentLine.geometry.setDrawRange(0, currentLine.userData.count);
+                    currentLine.geometry.attributes.position.needsUpdate = true;
+                }
+            }
+        }
+
+        window.addEventListener('mousedown', (e) => {
+            if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') {
+                if (e.button === 0) {
+                    isMouseDown = true;
+                    previousMousePosition = { x: e.clientX, y: e.clientY };
+
+                    if (isDrawingMode) {
+                        currentLine = null;
+                        drawPoint(e);
+                    } else if (myRole === "seeker") {
+                        shootGun();
+                    }
+                }
+            }
+        });
+
+        window.addEventListener('mouseup', () => { 
+            isMouseDown = false; 
+            currentLine = null;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isMouseDown) return;
+
+            if (isDrawingMode) {
+                drawPoint(e);
+            } else {
+                const deltaX = e.clientX - previousMousePosition.x;
+                const deltaY = e.clientY - previousMousePosition.y;
+
+                cameraAngleX -= deltaX * 0.005;
+                cameraAngleY += deltaY * 0.005;
+
+                cameraAngleY = Math.max(-0.2, Math.min(1.2, cameraAngleY));
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            }
+        });
+
+        // --- 4. PEERJS VA MULTIPLAYER ---
+        function startRoulette(isHost, hostRoleResult) {
+            const overlay = document.getElementById('roulette-overlay');
+            const wheel = document.getElementById('wheel');
+            overlay.style.display = 'flex';
+
+            let finalRole = "";
+            if (isHost) {
+                finalRole = Math.random() < 0.5 ? "seeker" : "hider";
+            } else {
+                finalRole = hostRoleResult === "seeker" ? "hider" : "seeker";
+            }
+
+            const rotationDeg = finalRole === "seeker" ? 1440 : 1620;
+            wheel.style.transform = `rotate(${rotationDeg}deg)`;
+
+            setTimeout(() => {
+                overlay.style.display = 'none';
+                setRole(finalRole);
+            }, 3500);
+
+            return finalRole;
+        }
+
+        function setRole(role) {
+            myRole = role;
+            const roleDiv = document.getElementById('role-display');
+            
+            if (role === "seeker") {
+                roleDiv.innerText = "Siz: IZLOVCHISIZ (Seeker) 🗡️";
+                roleDiv.style.color = "#ef4444";
+                myModel.gun.visible = true;
+                document.getElementById('crosshair').style.display = 'block';
+                startSeekerBlindness();
+            } else {
+                roleDiv.innerText = "Siz: BERKINUVCHISIZ (Hider) 🙈";
+                roleDiv.style.color = "#3b82f6";
+                myModel.gun.visible = false;
+                startMainGameTimer();
+            }
+        }
+
+        function startMainGameTimer() {
+            let timeLeft = 60;
+            const timerDiv = document.getElementById('game-timer');
+            
+            const timerInterval = setInterval(() => {
+                timeLeft--;
+                timerDiv.innerText = `Vaqt: ${timeLeft}s`;
+                
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    if (myRole === "hider") {
+                        alert("Vaqt tugadi! Berkinuvchi g'olib bo'ldi! 🎉");
+                    } else {
+                        alert("Vaqt tugadi! Izlovchi berkinuvchini topa olmadi. Yutqazdingiz!");
+                    }
+                    location.reload();
+                }
+            }, 1000);
+        }
+
+        function startSeekerBlindness() {
+            const blindScreen = document.getElementById('blind-screen');
+            const timerDiv = document.getElementById('timer');
+            blindScreen.style.display = 'flex';
+            
+            let timeLeft = 10;
+            timerDiv.innerText = timeLeft;
+
+            const interval = setInterval(() => {
+                timeLeft--;
+                timerDiv.innerText = timeLeft;
+                if (timeLeft <= 0) {
+                    clearInterval(interval);
+                    blindScreen.style.display = 'none';
+                    startMainGameTimer();
+                }
+            }, 1000);
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const joinId = urlParams.get('join');
+
+        const peer = new Peer();
+        let conn = null;
+        let isHost = false;
+
+        peer.on('open', (id) => {
+            if (joinId) {
+                document.getElementById('status').innerText = "Xonaga ulanilmoqda...";
+                conn = peer.connect(joinId);
+                setupConnection();
+            } else {
+                isHost = true;
+                document.getElementById('status').innerText = "Xona yaratildi! Do'stingizni kuting.";
+                document.getElementById('host-section').style.display = "block";
+                const roomLink = window.location.href.split('?')[0] + '?join=' + id;
+                document.getElementById('link-box').innerText = roomLink;
+                document.getElementById('link-box').style.display = "block";
+            }
+        });
+
+        peer.on('connection', (c) => {
+            conn = c;
+            setupConnection();
+            if (isHost) {
+                const hostRole = startRoulette(true);
+                conn.send({ type: 'start_game', hostRole: hostRole });
+            }
+        });
+
+        function setupConnection() {
+            conn.on('open', () => {
+                document.getElementById('status').innerText = "2-o'yinchi ulandi!";
+            });
+
+            conn.on('data', (data) => {
+                if (data.type === 'start_game') {
+                    startRoulette(false, data.hostRole);
+                } else if (data.type === 'move') {
+                    peerPlayer.position.set(data.x, data.y, data.z);
+                    peerPlayer.rotation.y = data.rotY;
+                    peerPlayer.visible = !data.hidden;
+                    applyEmote(peerModel, data.emote);
+                } else if (data.type === 'shot') {
+                    if (data.targetHit && myRole === "hider") {
+                        alert("Sizni izlovchi otib o'ldirdi! Game Over.");
+                        location.reload();
+                    }
+                }
+            });
+        }
+
+        function sendData() {
+            if (conn && conn.open) {
+                conn.send({
+                    type: 'move',
+                    x: player.position.x,
+                    y: player.position.y,
+                    z: player.position.z,
+                    rotY: player.rotation.y,
+                    hidden: isHiddenInside,
+                    emote: currentEmote
+                });
+            }
+        }
+
+        function copyLink() {
+            navigator.clipboard.writeText(document.getElementById('link-box').innerText);
+            alert("Link nusxalandi!");
+        }
+
+        // --- 5. BERKINISH VA QUROL ---
+        const keys = {};
+        window.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            if (e.key.toLowerCase() === 'e' && nearObject && myRole === "hider") {
+                toggleHide();
+            }
+            if (e.code === 'Space' && isGrounded && !isHiddenInside) {
+                velocityY = 0.25;
+                isGrounded = false;
+            }
+        });
+        window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+
+        function toggleHide() {
+            isHiddenInside = !isHiddenInside;
+            if (isHiddenInside) {
+                if (nearObject.userData.type.includes("Karavot")) {
+                    player.position.set(nearObject.position.x, 0.2, nearObject.position.z);
+                    myModel.body.rotation.x = Math.PI / 2;
+                } else {
+                    player.position.set(nearObject.position.x, 0.5, nearObject.position.z);
+                    myModel.body.visible = false;
+                }
+            } else {
+                player.position.z += 3;
+                player.position.y = 0;
+                myModel.body.rotation.x = 0;
+                myModel.body.visible = true;
+            }
+            sendData();
+        }
+
+        function checkNearObjects() {
+            if (myRole !== "hider" || isHiddenInside) {
+                document.getElementById('interact-prompt').style.display = 'none';
+                return;
+            }
+
+            nearObject = null;
+            for (let obj of interactiveObjects) {
+                let dist = player.position.distanceTo(obj.position);
+                if (dist < 4.5) {
+                    nearObject = obj;
+                    break;
+                }
+            }
+
+            const prompt = document.getElementById('interact-prompt');
+            if (nearObject) {
+                prompt.innerText = `${nearObject.userData.type} ichiga berkinish uchun [E] tugmasini bosing`;
+                prompt.style.display = 'block';
+            } else {
+                prompt.style.display = 'none';
+            }
+        }
+
+        function shootGun() {
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+            const intersects = raycaster.intersectObject(peerPlayer, true);
+            let hit = false;
+
+            if (intersects.length > 0) {
+                hit = true;
+                alert("Siz berkingan o'yinchini topdingiz va otib o'ldirdingiz! Siz YUTDINGIZ! 🎉");
+            }
+
+            if (conn && conn.open) {
+                conn.send({ type: 'shot', targetHit: hit });
+            }
+        }
+
+        function applyEmote(model, emote) {
+            if (emote === 'stand') {
+                model.body.rotation.x = 0; model.body.position.y = 1.1;
+            } else if (emote === 'sit') {
+                model.body.rotation.x = 0; model.body.position.y = 0.6;
+            } else if (emote === 'lay') {
+                model.body.rotation.x = Math.PI / 2; model.body.position.y = 0.3;
+            }
+        }
+
+        function setEmote(emote) {
+            if (isHiddenInside) return;
+            currentEmote = emote;
+            applyEmote(myModel, currentEmote);
+            sendData();
+        }
+
+        // --- 6. BOSHQARUV VA DEVOR CHEGARALARI ---
+        function checkCollisions(newPos) {
+            const playerBox = new THREE.Box3().setFromCenterAndSize(
+                newPos,
+                new THREE.Vector3(1, 2, 1)
+            );
+
+            for (let wallBox of wallColliders) {
+                if (playerBox.intersectsBox(wallBox)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function update() {
+            if (isHiddenInside) return;
+
+            if (!isGrounded) {
+                player.position.y += velocityY;
+                velocityY += gravity;
+
+                if (player.position.y <= 0) {
+                    player.position.y = 0;
+                    isGrounded = true;
+                    velocityY = 0;
+                }
+            }
+
+            const speed = 0.15;
+            let moved = false;
+
+            const forward = new THREE.Vector3(Math.sin(cameraAngleX), 0, Math.cos(cameraAngleX));
+            const side = new THREE.Vector3(Math.cos(cameraAngleX), 0, -Math.sin(cameraAngleX));
+
+            let nextPos = player.position.clone();
+
+            if (keys['w']) nextPos.sub(forward.clone().multiplyScalar(speed));
+            if (keys['s']) nextPos.add(forward.clone().multiplyScalar(speed));
+            if (keys['a']) nextPos.sub(side.clone().multiplyScalar(speed));
+            if (keys['d']) nextPos.add(side.clone().multiplyScalar(speed));
+
+            if (!checkCollisions(nextPos)) {
+                if (!player.position.equals(nextPos)) moved = true;
+                player.position.copy(nextPos);
+            }
+
+            player.rotation.y = cameraAngleX + Math.PI;
+
+            const cameraDistance = 10;
+            camera.position.x = player.position.x + Math.sin(cameraAngleX) * cameraDistance * Math.cos(cameraAngleY);
+            camera.position.y = player.position.y + Math.sin(cameraAngleY) * cameraDistance + 3;
+            camera.position.z = player.position.z + Math.cos(cameraAngleX) * cameraDistance * Math.cos(cameraAngleY);
+
+            camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
+
+            checkNearObjects();
+            if (moved || !isGrounded) sendData();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
